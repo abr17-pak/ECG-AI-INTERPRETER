@@ -1,0 +1,293 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ECG-AI Interpreter</title>
+<style>
+  :root{
+    --ink: #10231f;
+    --paper: #f6f4ef;
+    --line: #d8d2c4;
+    --trace: #1f6f5c;
+    --trace-dim: #a8c9c1;
+    --amber: #b8863b;
+    --red: #a13d3d;
+    --card: #ffffff;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; background:var(--paper); color:var(--ink);
+    font-family: 'Iowan Old Style', 'Palatino Linotype', Georgia, serif;
+    line-height:1.5;
+  }
+  .wrap{max-width:1180px; margin:0 auto; padding:28px 24px 80px;}
+  header{display:flex; justify-content:space-between; align-items:flex-end; gap:16px; border-bottom:2px solid var(--ink); padding-bottom:14px; margin-bottom:22px; flex-wrap:wrap;}
+  h1{font-size:28px; margin:0; font-weight:600; letter-spacing:0.2px;}
+  .sub{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; font-size:13px; color:#5a6b66; margin-top:4px;}
+  .badge{
+    font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+    font-size:12px; border:1px solid var(--amber); color:var(--amber);
+    padding:5px 10px; border-radius:3px; white-space:nowrap;
+  }
+  .grid{display:grid; grid-template-columns: 1.2fr 1fr; gap:22px;}
+  @media (max-width:880px){ .grid{grid-template-columns:1fr;} }
+  .panel{background:var(--card); border:1px solid var(--line); border-radius:4px; padding:20px;}
+  .drop{
+    border:2px dashed var(--line); border-radius:6px; padding:40px 20px; text-align:center;
+    cursor:pointer; transition:border-color .15s;
+  }
+  .drop:hover, .drop.drag{border-color:var(--trace);}
+  .drop input{display:none;}
+  button, .btn{
+    font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+    font-size:14px; font-weight:600; border:1px solid var(--ink); background:var(--ink); color:#fff;
+    padding:10px 18px; border-radius:3px; cursor:pointer;
+  }
+  button.secondary{background:transparent; color:var(--ink);}
+  button:disabled{opacity:0.4; cursor:not-allowed;}
+  .row{display:flex; gap:10px; flex-wrap:wrap; align-items:center;}
+  .controls{display:flex; gap:16px; margin-top:16px; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; font-size:13px;}
+  .controls label{display:block; color:#5a6b66; margin-bottom:4px;}
+  select{font-size:13px; padding:6px 8px; border:1px solid var(--line); border-radius:3px; background:#fff;}
+  #preview{max-width:100%; border-radius:4px; margin-top:14px; display:none;}
+
+  .state-pill{display:inline-block; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; font-size:12px; font-weight:700; padding:4px 10px; border-radius:12px; letter-spacing:0.3px;}
+  .state-green{background:#e4f1ea; color:#1f6f4a;}
+  .state-yellow{background:#fbf1de; color:#8a5a12;}
+  .state-red{background:#f6e4e4; color:var(--red);}
+
+  .measure-grid{display:grid; grid-template-columns: 1fr 1fr; gap:12px; margin-top:16px;}
+  .measure{border:1px solid var(--line); border-radius:4px; padding:12px 14px;}
+  .measure .label{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; font-size:11px; text-transform:uppercase; letter-spacing:0.6px; color:#5a6b66;}
+  .measure .value{font-size:22px; font-weight:600; margin-top:2px;}
+  .measure .note{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; font-size:12px; color:#7a8a85; margin-top:3px;}
+
+  table{width:100%; border-collapse:collapse; margin-top:10px; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; font-size:13px;}
+  th, td{text-align:left; padding:6px 8px; border-bottom:1px solid var(--line);}
+  th{color:#5a6b66; font-weight:600;}
+
+  .disclaimer{
+    font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; font-size:12.5px;
+    background:#fbf1de; border:1px solid #e8d3a3; color:#6b4d15; padding:12px 14px; border-radius:4px; margin-bottom:20px;
+  }
+  .empty{color:#8a978f; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; font-size:13px;}
+  .explain{margin-top:18px; padding-top:16px; border-top:1px solid var(--line);}
+  .explain h3{margin:0 0 8px; font-size:15px;}
+  .explain p{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; font-size:13.5px; color:#333;}
+  .explain ul{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; font-size:13px; padding-left:18px; color:#333;}
+  #err{display:none; color:var(--red); font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; font-size:13px; margin-top:10px;}
+  .spinner{display:none; margin-top:14px; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; font-size:13px; color:#5a6b66;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>ECG-AI Interpreter</h1>
+      <div class="sub">Image → reconstructed waveform → measured intervals → trained-model findings</div>
+    </div>
+    <span class="badge">Research prototype — not a medical diagnostic device</span>
+  </header>
+
+  <div class="grid">
+    <div class="panel">
+      <div class="drop" id="drop">
+        <div>Drop an ECG image here, or click to choose a file</div>
+        <div class="sub" style="margin-top:6px;">JPG or PNG · standard 3×4 12-lead layout</div>
+        <input type="file" id="fileInput" accept="image/*" />
+      </div>
+      <img id="preview" />
+
+      <div class="controls">
+        <div>
+          <label>Paper speed</label>
+          <select id="speed">
+            <option value="25">25 mm/s</option>
+            <option value="50">50 mm/s</option>
+          </select>
+        </div>
+        <div>
+          <label>Gain</label>
+          <select id="gain">
+            <option value="10">10 mm/mV</option>
+            <option value="5">5 mm/mV</option>
+            <option value="20">20 mm/mV</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="row" style="margin-top:18px;">
+        <button id="analyzeBtn" disabled>Analyze ECG</button>
+        <button class="secondary" id="resetBtn">Reset</button>
+      </div>
+      <div class="spinner" id="spinner">Running pipeline: quality check → layout → trace extraction → measurements → model…</div>
+      <div id="err"></div>
+    </div>
+
+    <div class="panel" id="resultsPanel">
+      <div class="row" style="justify-content:space-between;">
+        <strong>Analysis</strong>
+        <span id="statePill" class="state-pill" style="display:none;"></span>
+      </div>
+      <div id="resultsEmpty" class="empty">Upload an ECG image to run the pipeline.</div>
+      <div id="resultsBody" style="display:none;">
+        <div class="measure-grid">
+          <div class="measure"><div class="label">Heart rate</div><div class="value" id="mHR">–</div><div class="note" id="mHRnote"></div></div>
+          <div class="measure"><div class="label">Rhythm</div><div class="value" id="mRhythm">–</div></div>
+          <div class="measure"><div class="label">PR interval</div><div class="value" id="mPR">–</div><div class="note" id="mPRnote"></div></div>
+          <div class="measure"><div class="label">QRS duration</div><div class="value" id="mQRS">–</div><div class="note" id="mQRSnote"></div></div>
+          <div class="measure"><div class="label">QT</div><div class="value" id="mQT">–</div></div>
+          <div class="measure"><div class="label">QTc</div><div class="value" id="mQTc">–</div><div class="note" id="mQTcnote"></div></div>
+        </div>
+
+        <table id="stTable">
+          <thead><tr><th>Lead</th><th>ST deviation (J+60ms)</th></tr></thead>
+          <tbody></tbody>
+        </table>
+
+        <div id="findingsBlock" style="display:none;">
+          <table style="margin-top:18px;">
+            <thead><tr><th>Model finding</th><th>Probability</th></tr></thead>
+            <tbody id="findingsBody"></tbody>
+          </table>
+        </div>
+
+        <div class="explain">
+          <h3 id="explainHeadline"></h3>
+          <ul id="explainPoints"></ul>
+          <p id="explainNarrative"></p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const API_BASE = window.ECG_API_BASE || "http://127.0.0.1:8000";
+
+const drop = document.getElementById('drop');
+const fileInput = document.getElementById('fileInput');
+const preview = document.getElementById('preview');
+const analyzeBtn = document.getElementById('analyzeBtn');
+const resetBtn = document.getElementById('resetBtn');
+const spinner = document.getElementById('spinner');
+const errBox = document.getElementById('err');
+
+let selectedFile = null;
+
+drop.addEventListener('click', () => fileInput.click());
+drop.addEventListener('dragover', e => { e.preventDefault(); drop.classList.add('drag'); });
+drop.addEventListener('dragleave', () => drop.classList.remove('drag'));
+drop.addEventListener('drop', e => {
+  e.preventDefault(); drop.classList.remove('drag');
+  if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
+});
+fileInput.addEventListener('change', e => { if (e.target.files.length) handleFile(e.target.files[0]); });
+
+function handleFile(file) {
+  selectedFile = file;
+  preview.src = URL.createObjectURL(file);
+  preview.style.display = 'block';
+  analyzeBtn.disabled = false;
+  errBox.style.display = 'none';
+}
+
+resetBtn.addEventListener('click', () => {
+  selectedFile = null;
+  preview.style.display = 'none';
+  analyzeBtn.disabled = true;
+  fileInput.value = '';
+  document.getElementById('resultsBody').style.display = 'none';
+  document.getElementById('resultsEmpty').style.display = 'block';
+  document.getElementById('statePill').style.display = 'none';
+  errBox.style.display = 'none';
+});
+
+analyzeBtn.addEventListener('click', async () => {
+  if (!selectedFile) return;
+  errBox.style.display = 'none';
+  spinner.style.display = 'block';
+  analyzeBtn.disabled = true;
+
+  const form = new FormData();
+  form.append('file', selectedFile);
+  form.append('paper_speed_mm_s', document.getElementById('speed').value);
+  form.append('gain_mm_mv', document.getElementById('gain').value);
+
+  try {
+    const resp = await fetch(`${API_BASE}/api/analyze`, { method: 'POST', body: form });
+    if (!resp.ok) throw new Error(`Server returned ${resp.status}`);
+    const data = await resp.json();
+    render(data);
+  } catch (e) {
+    errBox.textContent = `Could not reach the analysis backend (${e.message}). Is it running at ${API_BASE}?`;
+    errBox.style.display = 'block';
+  } finally {
+    spinner.style.display = 'none';
+    analyzeBtn.disabled = false;
+  }
+});
+
+function fmt(val, unit) {
+  return (val === null || val === undefined) ? '—' : `${val} ${unit}`;
+}
+
+function render(d) {
+  document.getElementById('resultsEmpty').style.display = 'none';
+  document.getElementById('resultsBody').style.display = 'block';
+
+  const pill = document.getElementById('statePill');
+  pill.style.display = 'inline-block';
+  pill.className = 'state-pill state-' + d.quality_state;
+  pill.textContent = d.quality_message + ' · ' + d.quality_score + '/100';
+
+  document.getElementById('mHR').textContent = fmt(d.heart_rate_bpm, 'bpm');
+  document.getElementById('mHRnote').textContent = d.heart_rate_note || '';
+  document.getElementById('mRhythm').textContent = d.rhythm;
+  document.getElementById('mPR').textContent = fmt(d.pr_ms, 'ms');
+  document.getElementById('mPRnote').textContent = d.pr_ms === null ? d.pr_note : '';
+  document.getElementById('mQRS').textContent = fmt(d.qrs_ms, 'ms');
+  document.getElementById('mQRSnote').textContent = d.qrs_ms === null ? d.qrs_note : '';
+  document.getElementById('mQT').textContent = fmt(d.qt_ms, 'ms');
+  document.getElementById('mQTc').textContent = fmt(d.qtc_ms, 'ms');
+  document.getElementById('mQTcnote').textContent = d.qtc_ms !== null ? `${d.qtc_correction} correction` : '';
+
+  const stBody = document.querySelector('#stTable tbody');
+  stBody.innerHTML = '';
+  (d.st_deviation || []).forEach(row => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${row.lead}</td><td>${row.value === null ? 'not measurable' : row.value}</td>`;
+    stBody.appendChild(tr);
+  });
+
+  const findingsBlock = document.getElementById('findingsBlock');
+  const findingsBody = document.getElementById('findingsBody');
+  findingsBody.innerHTML = '';
+  if (d.model_findings && d.model_findings.length) {
+    findingsBlock.style.display = 'block';
+    d.model_findings
+      .slice()
+      .sort((a, b) => b.probability - a.probability)
+      .forEach(f => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td>${f.label.replaceAll('_', ' ')}</td><td>${(f.probability * 100).toFixed(1)}%</td>`;
+        findingsBody.appendChild(tr);
+      });
+  } else {
+    findingsBlock.style.display = 'none';
+  }
+
+  document.getElementById('explainHeadline').textContent = d.explanation_headline || (d.model_trained ? '' : 'Model not yet trained');
+  const pointsEl = document.getElementById('explainPoints');
+  pointsEl.innerHTML = '';
+  (d.explanation_points || []).forEach(p => {
+    const li = document.createElement('li');
+    li.textContent = p;
+    pointsEl.appendChild(li);
+  });
+  document.getElementById('explainNarrative').textContent = d.explanation_narrative || '';
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,2 @@
+# Extra deps only needed for training against PTB-XL (not part of the API runtime)
+wfdb==4.1.2
